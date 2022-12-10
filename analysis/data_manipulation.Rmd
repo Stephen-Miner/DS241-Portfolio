@@ -1,0 +1,92 @@
+---
+title: "Manipulating Data"
+author: "Stephen Miner"
+output: html_notebook
+---
+
+Loading libraries
+```{r}
+library(ggplot2)
+library(janitor)
+library(here)
+library(tidyverse)
+library(dplyr)
+```
+
+In this notebook I will be doing demonstrations of some of the most commonly used data manipulation functions. I'm a big Star Wars fan, so I'll be using that built-in dataset. 
+
+
+Let's start with filtering. The filter function takes data and some logical statements. For starters, let's filter values using the comparison operators, e.g. ==, !=, <, >, <=, >=. Let's find character with a mass above 100, but a height less than 200. And let's find only the males. 
+
+```{r}
+filter(starwars, mass>100, height<200, sex=="male")
+```
+
+Instead of commas, you can also use a logical "and" denoted by the '&' character. Let's verify that we get the same results.
+
+```{r}
+filter(starwars, mass>100 & height<200 & sex=="male")
+```
+
+Let's filter this down even further using the is.na() function to get rid of characters who don't have a known birth year. 
+
+```{r}
+filter(starwars, mass>100 & height<200 & sex=="male", is.na(birth_year)==FALSE)
+```
+
+Next let's take a look at the select() function. Select allows us to take subsets of the columns of a dataframe. It seems like a simple function at first, but there's quite a lot you can do with its arguments. For example, you can use the range operator, ':', the complement operator, '!', the logical operators for and and or, '&' and '|' respectively, and the c() to combine multiple selections without having to start a new line. To demonstrate the flexibility of select(), let's select the "mass" column in a number of different ways. 
+
+```{r}
+sl1 <- starwars %>% select(3)
+sl2 <- starwars %>% select(!!3)
+sl3 <- starwars %>% select(!1:2 & !4:14)
+sl4 <- starwars %>% select(starts_with("m"))
+sl5 <- starwars %>% select(contains("a")&ends_with("s")&!contains("ar"))
+```
+
+Next let's consider the summarise() function. This function allows us to create new dataframes based on some summary statistics we specify. For example, let's get the mean mass of the characters. The na.rm=TRUE argument simply removes NA values so we can get a numerical value for the mean. 
+
+```{r}
+starwars %>%
+  summarise(mean=mean(mass, na.rm=TRUE))
+```
+Let's next use summary to count how many distinct species are represented by these Star Wars characters using n_distinct
+
+```{r}
+starwars %>%
+  summarise(count=n_distinct(species))
+```
+
+Next let's take advantage of the group_by function to see how many characters of each species there are. 
+
+```{r}
+starwars %>%
+  group_by(species) %>%
+  summarise(count=n())
+```
+
+Now let's look at the slice() function. This allows us to select certain rows of our dataset. First, there are a couple variations on slice, like slice_head which gives us the first row, and slice_tail which gives us the last row.  
+
+```{r}
+slice_head(starwars)
+```
+
+```{r}
+slice_tail(starwars)
+```
+
+We can also pass these functions the argument "n" to tell it how many rows to get. We can also use slice_sample to randomly select rows. Let's randomly select 5 rows. Every time you run this code you'll get a random set of 5 characters. 
+
+```{r}
+slice_sample(starwars, n=5)
+```
+
+For the slice function, you can give it either positive or negative values. negative values allow you to drop rows from a dataframe, and positive values allow you to keep rows from a dataframe. 
+
+```{r}
+slice(starwars,1,4,5)
+```
+
+```{r}
+slice(starwars,-1:-84)
+```
