@@ -1,0 +1,105 @@
+---
+title: "Bikeshare Visualization"
+author: "Stephen Miner"
+output: html_notebook
+---
+
+Loading libraries
+```{r}
+library(tidyverse)
+library(janitor)
+library(dplyr)
+library(here)
+library(maps)
+```
+
+Loading Bikeshare data
+```{r}
+df <- read_csv(here("data_raw", "202209-capitalbikeshare-tripdata.csv"))
+```
+
+The first visualization I want to make for the bikeshare data is a map that shows the density of bikeshare starting positions. First, I'm going to just select the coordinates so the data is easier to work with.
+
+```{r}
+pairs <- df %>% select(9,10,11,12)
+```
+
+First, let's get a blank map of D.C. We use the map() function with the type 'state' and the region 'district of columbia'. We also make the map grey and use fill=TRUE to fill in the map, so it looks nicer when we overlay data onto it later. 
+
+```{r}
+map('state',regions='district of columbia',col="grey", fill=TRUE)
+```
+
+Now we get the map data in a dataframe format.
+
+```{r}
+dc <- map_data("state") %>% filter(region=='district of columbia')
+```
+
+Now we need to do some manipulation of our data. First we get only the starting latitude and longitude using select(). Then, we round the data to 5 decimal places. By default, the latitude and longitude have a high degree of precision, and we would usually only get 1 bike at a given latitude and longitude. We round this so that bikes in close proximity are grouped together, since they're probably at the same station. Then, we group the dataset first by starting longitude then by starting latitude so our summary statistics know what to look at. Then we summarise the dataset using the n() function, giving us a count of the number of bikes that started at each latitude and longitude pair. 
+
+```{r}
+data <- pairs %>% 
+  select(1,2) %>%
+  mutate(start_lng = round(start_lng,5), start_lat = round(start_lat,5)) %>%
+  group_by(start_lng, start_lat) %>% 
+  summarise(n=n()) %>% 
+  arrange(n) #%>% filter
+```
+
+Now, we plot the resulting map. geom_polygon() allows us to draw the map onto the plot. Then, we use geom_point() to put our summarised dataset onto the plot. To help understand the visualization better, both size and color will be based on n, so that areas with more bikes will be plotted with larger and brighter circles on the map than areas with fewer bikes. 
+
+```{r}
+ggplot() + 
+  geom_polygon(data=dc, aes(x=long, y=lat, group=group), fill="grey", alpha=1) +
+  geom_point(data=data, aes(x=start_lng,y=start_lat, size=n, color=n)) +
+  theme_void() + coord_map()
+```
+Next we will look at the pattern of the amount of ride starts and ride ends over the hours of the day. We will begin by loading the lubridate package to help us work with dates. 
+
+```{r}
+library(lubridate)
+```
+
+Now, we begin by selecting only the start and end times. Then, we mutate the start and end times by rounding them to the nearest hour. Finally, we set the start and end times equal to the numerical value of their hour. 
+
+```{r}
+time_data <- df %>% select(3,4) %>% 
+  mutate(started_at = round_date(started_at, unit="hour"), ended_at = round_date(ended_at, unit="hour")) %>% 
+  mutate(started_at = hour(started_at), ended_at = hour(ended_at))
+```
+
+Now, we isolate the start times to easily work on them. First, we group and summarise them to get a count of the number of rides that started at each hour. Then, we change the column names to be nicer. 
+```{r}
+start_data = time_data %>% 
+  select(1) %>%
+  group_by(started_at) %>%
+  summarise(start_count=n())
+colnames(start_data) <- c("hour","start")
+```
+
+Now we do the same thing for end times. 
+```{r}
+end_data = time_data %>% 
+  select(2) %>%
+  group_by(ended_at) %>%
+  summarise(end_count=n())
+colnames(end_data) <- c("hour","end")
+```
+
+Next, we perform a full join (also known as "outer join" or "full outer join") to combine our start and end data.
+```{r}
+time_counts <- full_join(start_data, end_data, by="hour")
+```
+
+To make this easier to plot, we use pivot_longer to give us one column saying whether a row is start or end time, and one column giving us the count at that time. 
+```{r}
+time_counts <- time_counts %>% 
+  pivot_longer(c("start","end"),names_to="type",values_to = "count")
+```
+
+Finally, we do a simple plot to see how our data looks. Note the use of color=type to distinguish between start and end data. 
+```{r}
+ggplot(time_counts, mapping=aes(x=hour,y=count,color=type)) + geom_point()
+```
+
