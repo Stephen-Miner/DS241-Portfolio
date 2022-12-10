@@ -1,0 +1,116 @@
+---
+title: "Visualizing data using ggplot2"
+author: "Stephen Miner"
+output: html_notebook
+---
+
+Loading required libraries
+```{r}
+library(ggplot2)
+library(janitor)
+library(here)
+library(tidyverse)
+library(quantreg)
+```
+
+Reading and cleaning the data
+```{r}
+df1 <- read_csv(here("data_raw", "DL_SelectFields_2017.zip"),show_col_types=FALSE) %>% clean_names()
+```
+
+The problem we will be looking at for this demonstration of visualizing using ggpglot2 is seats vs passengers. In other words, we will be using various visualizations to help us understand the relationship between the number of seats a flight has and the number of passengers that actually end up on the flight. 
+
+First, let's filter out any flights that contained no passengers.
+```{r}
+df1 <- df1 %>% filter(passengers>0)
+```
+
+
+Let's just try visualizing with a scatterplot first.
+```{r}
+df1 %>% ggplot(mapping=aes(x=seats,y=passengers)) + geom_point()
+```
+This visualization is messy, and a bit hard to analyze. Let's create a new column called "load_percentage" that tells us the percentage of the seats of each flight that are filled.
+
+```{r}
+df2 <- df1 %>% mutate(load_percentage = passengers/seats * 100)
+```
+
+Now, let's visualize this as a histogram. 
+
+```{r}
+df2 %>% ggplot(mapping=aes(x=load_percentage)) + geom_histogram()
+```
+
+This is a good start, but let's clean it up a bit. First, we will take care of the warning about 12 rows containing non-finite values. Looking in df2, we can see that this was caused by flights listed as having 0 seats, but having passengers. For these 12 flights, there was a division by 0, which R handles by giving it the value "inf". So, let's remove the flights that had 0 seats. Also, looking at the dataset we can see there are some flights with load percentages higher than 100%, so let's also remove flights with more passengers than seats, since that doesn't really make sense. 
+
+```{r}
+df3 <- df2 %>% filter(seats != 0, passengers<=seats)
+```
+
+Now let's try that visualization again. 
+
+```{r}
+df3 %>% ggplot(mapping=aes(x=load_percentage)) + geom_histogram()
+```
+Much better, but the default 30 bins isn't great. 100/30 is not a nice number for us to easily understand, so let's make bins of width 5. This way each bar will represent a range of 5%, much easier for humans to understand. 
+
+```{r}
+df3 %>% ggplot(mapping=aes(x=load_percentage)) + geom_histogram(binwidth=5)
+```
+Great, now we can see this distribution has a peak somewhere around 90%. It also appears visually that most of the data is contained within the 65%-95% range.This way of eyeballing it is alright, but we can get a bit more precise. Let's use a box plot.
+
+```{r}
+df3 %>% ggplot(mapping=aes(x=load_percentage)) + geom_boxplot()
+```
+This can give us a clearer picture of the data, but we still have a bit of work to do to get there. Let's label the min, Q1, median, Q3, and max. First, we'll need to actually find these numbers. Thankfully, the function fivenum() exists to help us. Let's make a dataset containing these 5 numbers. By default fivenum gives us a list, so we need to use the unnest() function from tidyr to break it up into a usable dataframe. Then, we just round the data to 1 decimal place so the labels aren't too long. 
+
+```{r}
+fivenums <- df3 %>%
+  summarise(q = list(fivenum(load_percentage))) %>%
+  unnest(cols=c(q)) %>%
+  mutate(q = round(q,1))
+```
+
+Now, adding a geom_text() layer to our plot gives us the  labels. We see from the previous plot that the y axis goes down to just above -0.4, so putting the labels at -0.4 seems reasonable. 
+```{r}
+df3 %>% ggplot(mapping=aes(x=load_percentage)) + 
+  geom_boxplot() +
+  geom_text(data=fivenums, aes(x=q, y=-0.4, label=q))
+```
+Now we have some more precise numbers. The median percentage of seats filled is 80.3%, and the majority of the data falls in the range 64.5% to 89.0%. Let's make the plot look nicer. 
+
+```{r}
+df3 %>% ggplot(mapping=aes(x=load_percentage)) + 
+  geom_boxplot(fill="sky blue") +
+  geom_text(data=fivenums, aes(x=q, y=-0.4, label=q)) +
+  theme_minimal() +
+  labs(x="Seats Filled (%)", y="Frequency", title="Percentage of Seats Filled Box Plot")
+```
+There's one more thing to consider: we are looking at this per type of flight, not per individual flight. In other words, we can weight the computation of the boxplot by the number of departures performed to get an idea of the capacity for all of the individual flights as opposed to all of the flight types. Some of the next few chunks of code may take longer to run.
+
+```{r}
+p <- df3 %>% ggplot(mapping=aes(x=load_percentage)) + 
+  geom_boxplot(fill="sky blue", aes(weight=departures_performed)) +
+  theme_minimal() +
+  labs(x="Seats Filled (%)", y="Frequency", title="Percentage of Seats Filled Box Plot")
+```
+
+The reason we don't plot this right away is that we need to extract the five numbers from the plot, which were computed by ggplot, before layering them onto the plot, since fivenum() won't help us here. 
+
+```{r}
+layer_data(p)
+```
+
+```{r}
+fivenums_2 <- data.frame(q=c(49.8, 72.8, 81.6, 88.1, 100))
+p <- p + geom_text(data=fivenums_2, aes(x=q, y=-0.4, label=q))
+```
+
+Now that we have our labels, let's draw the plot.
+
+```{r}
+plot(p)
+```
+
+When weighted by the number of departures, we get a bit tighter of an IQR. This time, the majority of data is contained in the range 72.8% to 88.1%. 
